@@ -1,0 +1,141 @@
+---
+title: "PA2_SevereWeather"
+author: "Cathy Snell"
+date: "Monday, August 17, 2015"
+output: html_document
+---
+
+#US Severe Weather Events Populate and Economic Impact Analysis 
+
+## Synopsis
+This analysis uses the NOAA Storm Database to answer the following questions:
+1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+## Data Processing
+
+###Database Details and Loading
+
+The data source is the [NOAA STorm Database](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2).  Additional details around data collection and variable definitions are available:
+
+National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
+
+National Climatic Data Center Storm Events [FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
+
+The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+The variables relevant to this analysis are:
+
+- **EVTYPE**: Factor variable with 3 levels "HAIL", "TORNADO", "TSTM WIND"
+- **FATALITIES**: Number of fatalities per storm
+- **INJURIES**: Number of injuries per storm
+- **PROPDMG**: Property Damage in USD
+- **PROPDMGEXP**: Factor indicating size of Property Damage dollars ("K", "M")
+- **CROPDMG**: Crop Damage in USD
+- **CROPDMGEXP**: Factor indicating size of Property Damage dollars ("K", "M")
+
+Load the data. No processing/transforming is needed to start analysis.
+
+```{r load, cache=TRUE}
+url <- "http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+temp <- tempfile()
+download.file(url, temp)
+
+## read.csv can handle compressed files automatically
+storm <- read.csv(temp)
+unlink(temp)
+```
+
+###Population Health Impact
+
+We are interested in storms across the US, so all states will be considered.
+
+Sum the total fatalies and injuries for each storm type and view the output.
+
+```{r pop_health1}
+fate <- aggregate(storm$FATALITIES, list(storm$EVTYPE), FUN=sum)
+fate 
+inj <- aggregate(storm$INJURIES, list(storm$EVTYPE), FUN=sum)
+inj
+```
+
+Combine into a single data frame and plot as barchart for visual comparison.
+
+```{r pop_health2}
+fate$Impact <- "Fatalities" 
+inj$Impact <- "Injuries"
+
+pop_health <- rbind(fate, inj)
+
+library(lattice)
+barchart(x ~ Group.1|Impact, 
+           data = pop_health,
+           xlab = "Storm Type",
+           ylab = "Number of Incidents",
+           layout=c(1,2))
+
+```
+
+### Economic Impact
+
+Sum the total economic impact for each storm type and view the output. 
+
+Start by normalizing the property damage amounts to eliminate the differences between $B, $M, $K, etc. 
+
+```{r econ_imp0}
+prop <- storm[, c(8, 25:26)]
+table(prop$PROPDMGEXP)
+
+crop <- storm[, c(8, 27:28)]
+table(crop$CROPDMGEXP)
+```
+
+There are some unknown or non-standard values in PROPDMGEXP and CROPDMGEXP, but these are lower frequency, and were not included in the total.
+
+```{r econ_imp1}
+prop_b <- subset(prop, PROPDMGEXP == "B")
+prop_b$norm_USD <- prop_b$PROPDMG*1000000000
+prop_m <- subset(prop, PROPDMGEXP == "M" | PROPDMGEXP == "m")
+prop_m$norm_USD <- prop_m$PROPDMG*1000000
+prop_k <- subset(prop, PROPDMGEXP == "K" | PROPDMGEXP == "k")
+prop_k$norm_USD <- prop_k$PROPDMG*1000
+prop_0 <- subset(prop, PROPDMGEXP == "")
+prop_0$norm_USD <- prop_0$PROPDMG
+
+prop <- rbind(prop_m, prop_k, prop_0, prop_b)
+
+prop_dam <- aggregate(prop$norm_USD, list(prop$EVTYPE), FUN=sum)
+prop_dam 
+
+crop_b <- subset(crop, CROPDMGEXP == "B")
+crop_b$norm_USD <- crop_b$CROPDMG*1000000000
+crop_m <- subset(crop, CROPDMGEXP == "M" | CROPDMGEXP == "m")
+crop_m$norm_USD <- crop_m$CROPDMG*1000000
+crop_k <- subset(crop, CROPDMGEXP == "K" | CROPDMGEXP == "k")
+crop_k$norm_USD <- crop_k$CROPDMG*1000
+crop_0 <- subset(crop, CROPDMGEXP == "")
+crop_0$norm_USD <- crop_0$CROPDMG
+
+crop <- rbind(crop_m, crop_k, crop_0, crop_b)
+
+crop_dam <- aggregate(crop$norm_USD, list(crop$EVTYPE), FUN=sum)
+crop_dam
+```
+
+Combine into a single data frame and plot as barchart for visual comparison.
+
+```{r econ_imp2}
+prop$Impact <- "Property"
+crop$Impact <- "Crop"
+
+econ_imp <- rbind(prop, crop)
+
+barchart(x ~ Group.1|Impact, 
+           data = econ_imp,
+           xlab = "Storm Type",
+           ylab = "Economic Impact in USD",
+           layout=c(1,2))
+```
+
+##Results
+
