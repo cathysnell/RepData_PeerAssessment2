@@ -5,36 +5,33 @@ date: "Monday, August 17, 2015"
 output: html_document
 ---
 
-#US Severe Weather Events Populate and Economic Impact Analysis 
+#US Severe Weather Events Population and Economic Impact Analysis 
 
 ## Synopsis
-This analysis uses the NOAA Storm Database to answer the following questions:
-1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
-2. Across the United States, which types of events have the greatest economic consequences?
+This analysis uses the NOAA Storm Database to answer which weather events across the US are most harmful to populate health and have the greatest economic impact.  The analysis focuses on the top weather events in each of 4 categories: fatalities, injuries, property damage and crop damage.
 
 ## Data Processing
 
 ###Database Details and Loading
 
-The data source is the [NOAA STorm Database](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2).  Additional details around data collection and variable definitions are available:
+The data source is the [NOAA STorm Database](http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2).  Additional details around data collection and variable definitions are available:
 
-National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
-
-National Climatic Data Center Storm Events [FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
+- National Weather Service [Storm Data Documentation](http://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
+- National Climatic Data Center Storm Events [FAQ](http://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
 
 The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
 
 The variables relevant to this analysis are:
 
-- **EVTYPE**: Factor variable with 3 levels "HAIL", "TORNADO", "TSTM WIND"
-- **FATALITIES**: Number of fatalities per storm
-- **INJURIES**: Number of injuries per storm
+- **EVTYPE**: Factor variable with weather event type such as "HAIL", "TORNADO", "TSTM WIND"
+- **FATALITIES**: Number of fatalities per weather event
+- **INJURIES**: Number of injuries per weather event
 - **PROPDMG**: Property Damage in USD
 - **PROPDMGEXP**: Factor indicating size of Property Damage dollars ("K", "M")
 - **CROPDMG**: Crop Damage in USD
 - **CROPDMGEXP**: Factor indicating size of Property Damage dollars ("K", "M")
 
-Load the data. No processing/transforming is needed to start analysis.
+Load the data. First we confirm the columns available, then load just what will be needed to save space.
 
 ```{r load, cache=TRUE}
 url <- "http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
@@ -42,55 +39,94 @@ temp <- tempfile()
 download.file(url, temp)
 
 ## read.csv can handle compressed files automatically
-storm <- read.csv(temp)
+storm <- read.csv(temp)[1, ]
+storm
+## read in only the needed columns to save space
+storm <- read.csv(temp)[, c('BGN_DATE', 'STATE', 'EVTYPE', 'FATALITIES', 'INJURIES',
+                            'PROPDMG', 'PROPDMGEXP', 'CROPDMG', 'CROPDMGEXP')]
 unlink(temp)
+nrow(storm)
 ```
 
 ###Population Health Impact
 
 We are interested in storms across the US, so all states will be considered.
 
-Sum the total fatalies and injuries for each storm type and view the output.
+To answer the first question, sum the total fatalies and injuries for each weather event type, filter to the most impactful to population health and view the output. There are 985 levels of the ENTYPE variable, so we will limit our view to the top 10 fatalities and injuries.
 
 ```{r pop_health1}
 fate <- aggregate(storm$FATALITIES, list(storm$EVTYPE), FUN=sum)
-fate 
+nrow(fate)
+fate$Impact <- "Fatalities" 
+
+fate_sort <- fate[with(fate, order(-x)),]
+head(fate_sort, 10)
+
 inj <- aggregate(storm$INJURIES, list(storm$EVTYPE), FUN=sum)
-inj
+inj$Impact <- "Injuries"
+inj_sort <- inj[with(inj, order(-x)), ]
+head(inj_sort, 10)
 ```
 
-Combine into a single data frame and plot as barchart for visual comparison.
+We see some duplication of weather events even in this much reduced set of events with the highest fatalities and injuries.  Additionally, as expected, the set of weather events varies some between the fatalities and injuries. To round things out, combine the duplicates and fill out any missing values.
+
+Once clean, plot as a stacked barchart for visual comparison.
 
 ```{r pop_health2}
-fate$Impact <- "Fatalities" 
-inj$Impact <- "Injuries"
 
-pop_health <- rbind(fate, inj)
+pop_health <- rbind(fate_sort[1:10,], inj_sort[1:10,])
+row.names(pop_health) <- c(1:nrow(pop_health))
 
-library(lattice)
-barchart(x ~ Group.1|Impact, 
-           data = pop_health,
-           xlab = "Storm Type",
-           ylab = "Number of Incidents",
-           layout=c(1,2))
+## Remove the duplicate thunderstorm wind entries
+pop_health[grep("M WIND", pop_health$Group.1),]
+pop_health[12,2] <- sum(pop_health[12,2], pop_health[19,2])
+pop_health <- pop_health[c(1:18,20), ]
+
+## Check to populate any missing values
+inj[grep("AVALANCHE", inj$Group.1),]
+pop_health <- rbind(pop_health, inj[19,])
+
+hail <- fate[grep("HAIL", fate[,1]), ]
+hail[hail[,2] > 0, ]
+pop_health <- rbind(pop_health, fate[244,])
+
+high_wind <- inj[grep("^HIGH WIND", inj$Group.1),]
+high_wind[high_wind[,2] > 0, ]
+pop_health <- rbind(pop_health, inj[359,])
+pop_health[21,2] <- sum(pop_health[21,2], inj[376,2])
+
+ice <- fate[grep("ICE STORM", fate[,1]), ]
+ice[ice[,2] > 0, ]
+pop_health <- rbind(pop_health, fate[427,])
+
+rip <- inj[grep("RIP CURRENT", inj$Group.1),]
+rip[rip[,2] > 0, ]
+pop_health <- rbind(pop_health, inj[585,])
+pop_health[23,2] <- sum(pop_health[23,2], inj[586,2])
+
+library(ggplot2)
+ggplot(data=pop_health, aes(x=Group.1, y=x, fill=Impact)) +
+    geom_bar(stat="identity") + xlab("Weather Event") + 
+    ylab("Number of Fatalities and Injuries") + theme(text = element_text(size=16),
+        axis.text.x = element_text(angle=90, vjust=1)) 
 
 ```
 
 ### Economic Impact
 
-Sum the total economic impact for each storm type and view the output. 
+To answer the second question, sum the total economic impact for each weather type, filter to the top impacting weather types and view the output. 
 
-Start by normalizing the property damage amounts to eliminate the differences between $B, $M, $K, etc. 
+Start by normalizing the property damage amounts to eliminate the differences between B, M, K, etc. 
 
 ```{r econ_imp0}
-prop <- storm[, c(8, 25:26)]
+prop <- storm[, c('EVTYPE', 'PROPDMG', 'PROPDMGEXP')]
 table(prop$PROPDMGEXP)
 
-crop <- storm[, c(8, 27:28)]
+crop <- storm[, c('EVTYPE', 'CROPDMG', 'CROPDMGEXP')]
 table(crop$CROPDMGEXP)
 ```
 
-There are some unknown or non-standard values in PROPDMGEXP and CROPDMGEXP, but these are lower frequency, and were not included in the total.
+There are some unknown or non-standard values in PROPDMGEXP and CROPDMGEXP, but these are lower frequency, and so were not included in the totals.
 
 ```{r econ_imp1}
 prop_b <- subset(prop, PROPDMGEXP == "B")
@@ -99,13 +135,15 @@ prop_m <- subset(prop, PROPDMGEXP == "M" | PROPDMGEXP == "m")
 prop_m$norm_USD <- prop_m$PROPDMG*1000000
 prop_k <- subset(prop, PROPDMGEXP == "K" | PROPDMGEXP == "k")
 prop_k$norm_USD <- prop_k$PROPDMG*1000
-prop_0 <- subset(prop, PROPDMGEXP == "")
+prop_0 <- subset(prop, PROPDMGEXP == "" | PROPDMGEXP == "0")
 prop_0$norm_USD <- prop_0$PROPDMG
 
 prop <- rbind(prop_m, prop_k, prop_0, prop_b)
 
-prop_dam <- aggregate(prop$norm_USD, list(prop$EVTYPE), FUN=sum)
-prop_dam 
+prop_dmg <- aggregate(prop$norm_USD, list(prop$EVTYPE), FUN=sum)
+prop_dmg$Impact <- "Property"
+prop_dmg_sort <- prop_dmg[with(prop_dmg, order(-x)),]
+head(prop_dmg_sort, 10)
 
 crop_b <- subset(crop, CROPDMGEXP == "B")
 crop_b$norm_USD <- crop_b$CROPDMG*1000000000
@@ -113,29 +151,45 @@ crop_m <- subset(crop, CROPDMGEXP == "M" | CROPDMGEXP == "m")
 crop_m$norm_USD <- crop_m$CROPDMG*1000000
 crop_k <- subset(crop, CROPDMGEXP == "K" | CROPDMGEXP == "k")
 crop_k$norm_USD <- crop_k$CROPDMG*1000
-crop_0 <- subset(crop, CROPDMGEXP == "")
+crop_0 <- subset(crop, CROPDMGEXP == "" | CROPDMGEXP == "0")
 crop_0$norm_USD <- crop_0$CROPDMG
 
 crop <- rbind(crop_m, crop_k, crop_0, crop_b)
 
-crop_dam <- aggregate(crop$norm_USD, list(crop$EVTYPE), FUN=sum)
-crop_dam
+crop_dmg <- aggregate(crop$norm_USD, list(crop$EVTYPE), FUN=sum)
+crop_dmg$Impact <- "Crop"
+crop_dmg_sort <- crop_dmg[with(crop_dmg, order(-x)),]
+head(crop_dmg_sort, 10)
 ```
 
-Combine into a single data frame and plot as barchart for visual comparison.
+We again see some duplication of weather events in this much reduced set of events with the highest monetary damage.  Additionally, as expected, the set of weather events varies some between the property damage and crop damage. Because the types of events that damage crop typically don't effect properties, no further clean up has been performed.
+
+Once clean, plot as a stacked barchart for visual comparison.
 
 ```{r econ_imp2}
-prop$Impact <- "Property"
-crop$Impact <- "Crop"
 
-econ_imp <- rbind(prop, crop)
+econ_imp <- rbind(prop_dmg_sort[1:10,], crop_dmg_sort[1:10,])
+row.names(econ_imp) <- c(1:nrow(econ_imp))
 
-barchart(x ~ Group.1|Impact, 
-           data = econ_imp,
-           xlab = "Storm Type",
-           ylab = "Economic Impact in USD",
-           layout=c(1,2))
+## Combine the hurricane entries
+econ_imp[grep("HURRICANE", econ_imp$Group.1),]
+econ_imp[2,2] <- sum(econ_imp[2,2], econ_imp[7,2])
+econ_imp[17,2] <- sum(econ_imp[17,2], econ_imp[16,2])
+econ_imp <- econ_imp[c(1:6,8:15,17:20), ]
+row.names(econ_imp) <- c(1:nrow(econ_imp))
+
+## Combine extreme cold and frost/freeze
+econ_imp[grep("FROST", econ_imp$Group.1),]
+econ_imp[grep("EXTREME COLD", econ_imp$Group.1),]
+econ_imp[18,2] <- sum(econ_imp[18,2], econ_imp[17,2])
+econ_imp <- econ_imp[c(1:16,18), ]
+
+ggplot(data=econ_imp, aes(x=Group.1, y=x, fill=Impact)) +
+    geom_bar(stat="identity") + xlab("Weather Event") + 
+    ylab("Amount of Damage in USD") + theme(text = element_text(size=16),
+        axis.text.x = element_text(angle=90, vjust=1))
+
 ```
 
 ##Results
-
+By examining the top 10 most harmful weather types across four different categories of fatalities, injuries, property damage and crop damage, we see that tornados have the greatest impact on population health and floods have the greatest economic impact.
